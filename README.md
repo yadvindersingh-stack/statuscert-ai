@@ -45,3 +45,4 @@ If the worker is not running, jobs stay `QUEUED` and no extraction/generation st
 - Review page uses Supabase Realtime for status updates with polling fallback on channel/network issues.
 - Queue SLO health is available at `/api/statuscert/worker/health`.
 - Billing is part of onboarding (`/app/billing?source=onboarding`), and generate/export are entitlement-gated.
+# statuscert-ai
