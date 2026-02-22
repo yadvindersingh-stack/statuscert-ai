@@ -1,0 +1,120 @@
+{
+  "title": "Status Certificate Review",
+  "matter": "302 - 75 St. Nicholas St., Toronto, ON",
+  "status_certificate_date": "2025-08-15",
+  "corporation": "Toronto Standard Condominium Corporation No. 2444",
+  "disclaimers": [
+    "Internal legal work product. This summary highlights legal points only and does not replace full document review.",
+    "Client should review full status package and condominium rules/by-laws/declaration for lifestyle and operational details.",
+    "Budget and reserve commentary is limited legal-context extraction, not independent accounting advice."
+  ],
+  "key_terms": {
+    "property_unit": "Unit 302 (status certificate references UNIT 2 LEVEL 3, municipal unit 302)",
+    "parking_unit": "Not specified in extracted status certificate text; owner to provide any parking/locker details before closing",
+    "locker_unit": "Not specified in extracted status certificate text; owner to provide details before closing",
+    "bike_unit": "Not specified in extracted text",
+    "common_expenses": "$388.84 due Sept 1, 2025",
+    "default_status": "Owner not in default as of Aug 15, 2025",
+    "prepaid_common_expenses": "$0.00",
+    "increase_since_budget": "No",
+    "special_assessment_since_budget": "No",
+    "reserve_fund_balance": "$1,770,174.69 (unaudited as of Jun 30, 2025)",
+    "reserve_fund_study": "Class 3 study dated Feb 2025",
+    "leased_unit_count": "Approximately 219 units",
+    "legal_proceedings_present": "Yes",
+    "insurance_present": "Yes"
+  },
+  "sections": [
+    {
+      "key": "insurance",
+      "title": "Note 1 - Insurance",
+      "content": "Insurance certificate indicates coverage term May 18, 2025 to May 18, 2026 and property amount of $115,930,000. Deductibles include $25,000 standard, $50,000 sewer backup, $50,000 water, $100,000 flood, and $100,000 earthquake. Unit owner should maintain contents, betterments/improvements, liability, and deductible chargeback protection.",
+      "evidence": [
+        "TSC 2444 - 2025 Insurance Certificate.txt:17",
+        "TSC 2444 - 2025 Insurance Certificate.txt:47",
+        "TSC 2444 - 2025 Insurance Certificate.txt:89",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:294"
+      ]
+    },
+    {
+      "key": "budget_reserve",
+      "title": "Note 2 - Budget and Reserve Fund",
+      "content": "Reserve fund balance is $1,770,174.69 (unaudited) as of Jun 30, 2025. Most recent reserve fund study is Class 3 dated Feb 2025. Board issued reserve plan notice on Apr 4, 2025 and implemented plan. Corporation discloses no known increase circumstances except seen/unforeseen costs that could lead to special assessment, loan, or increased common expenses as reflected in minutes.",
+      "evidence": [
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:157",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:159",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:165",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:171"
+      ]
+    },
+    {
+      "key": "pets",
+      "title": "Note 3 - Pet Rules",
+      "content": "Pet owners must immediately clean pet waste from common elements. Failure can constitute nuisance and may result in mandatory permanent pet removal after notice.",
+      "evidence": [
+        "TSCC 2444 - Rules.txt:201"
+      ]
+    },
+    {
+      "key": "leasing",
+      "title": "Note 4 - Tenancy / Leasing Rules",
+      "content": "Before tenant occupancy, owner must provide tenant info form, tenant undertaking/acknowledgment, and lease/application documents. Non-compliance can result in occupants being treated as trespassers until compliance. Owner must notify corporation within 7 days after tenancy ends; tenant subletting is prohibited; owner remains responsible for tenant-caused common-element damage; owner loses common-element use during tenant occupancy. Approximately 219 units reported leased.",
+      "evidence": [
+        "TSCC 2444 - Rules.txt:270",
+        "TSCC 2444 - Rules.txt:277",
+        "TSCC 2444 - Rules.txt:287",
+        "TSCC 2444 - Rules.txt:294",
+        "TSCC 2444 - Rules.txt:296",
+        "TSCC 2444 - Rules.txt:300",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:280"
+      ]
+    },
+    {
+      "key": "use_restrictions",
+      "title": "Note 5 - Use Restrictions",
+      "content": "No barbecues indoors or on balconies. Smoking prohibited in common areas except board-designated smoking area. Awnings/foil/shades on windows, patios, balconies or terraces require board consent. Hanging or drying clothes on balconies/exclusive use areas is prohibited.",
+      "evidence": [
+        "TSCC 2444 - Rules.txt:147",
+        "TSCC 2444 - Rules.txt:158",
+        "TSCC 2444 - Rules.txt:172",
+        "TSCC 2444 - Rules.txt:484"
+      ]
+    },
+    {
+      "key": "legal",
+      "title": "Note 6 - Legal Proceedings",
+      "content": "Multiple proceedings are disclosed, primarily tied to 2021/2022 flood and riser/mechanical contractor issues, including claims where corporation is plaintiff and claims/third-party or defendant claims against corporation. Disclosed claim values include $951,704 quantified damages in one action, $156,472 in counterclaim action, $2,000,000 corporation claim, and multiple owner/tenant claims in $35,000 to $200,000 ranges.",
+      "evidence": [
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:185",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:193",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:202",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:213",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:222",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:233",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:242",
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:251"
+      ]
+    },
+    {
+      "key": "prior_special_assessments",
+      "title": "Note 7 - Prior Special Assessments",
+      "content": "Status certificate says no assessment levied since current budget date. Financial statements disclose prior-year board-approved special assessment of $3,470,466 (twelve monthly installments beginning June 2023) and an additional $262,795 transfer from general fund to reserve fund due to higher riser retrofit costs.",
+      "evidence": [
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:142",
+        "TSCC 2444 - Final Financial Statements 2024.txt:335",
+        "TSCC 2444 - Final Financial Statements 2024.txt:341"
+      ]
+    },
+    {
+      "key": "garage_repairs",
+      "title": "Note 8 - Underground Garage Repairs",
+      "content": "Corporation states underground garage repairs are planned on all levels, to be paid from reserve fund; cost not known at certificate date.",
+      "evidence": [
+        "TSCC 2444 - 75 St. Nicholas St unit 302 -AUG2025.DIG.txt:290"
+      ]
+    }
+  ],
+  "extraction_gaps": [
+    "Low-extract text files likely image/scanned and require OCR for full clause extraction: TSCC 2444 - Bylaw 1/2/3, Declaration, Budget package 2025-2026, 2025 NOFF"
+  ]
+}

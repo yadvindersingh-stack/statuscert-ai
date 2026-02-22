@@ -1,0 +1,7 @@
+{
+  "/login/page": "app/login/page.js",
+  "/api/stripe/webhook/route": "app/api/stripe/webhook/route.js",
+  "/api/stripe/checkout/route": "app/api/stripe/checkout/route.js",
+  "/app/reviews/page": "app/app/reviews/page.js",
+  "/app/billing/page": "app/app/billing/page.js"
+}

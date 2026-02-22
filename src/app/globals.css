@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --bg: #f2f5f9;
+  --surface: #ffffff;
+  --surface-muted: #f7f9fc;
+  --primary: #0f2740;
+  --primary-strong: #0a1e33;
+  --text: #0f1f2f;
+  --muted: #5a6776;
+  --border: #d6dee8;
+  --success: #1f6e4a;
+  --warning: #8a5a2b;
+  --danger: #b33a3a;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  @apply antialiased;
+}
+
+.prose-legal h1, .prose-legal h2, .prose-legal h3 {
+  @apply font-serif;
+  color: var(--text);
+}
+
+.prose-legal p {
+  @apply leading-relaxed;
+  color: var(--muted);
+}
+
+.card {
+  @apply rounded-2xl shadow-card;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.badge {
+  @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-semibold transition focus:outline-none;
+  box-shadow: 0 0 0 0 rgba(15, 39, 64, 0);
+}
+
+.btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(15, 39, 64, 0.18);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--primary-strong);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--primary);
+}
+
+.section-title {
+  @apply text-sm uppercase tracking-[0.2em];
+  color: var(--muted);
+}
