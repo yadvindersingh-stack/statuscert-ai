@@ -38,7 +38,12 @@ export default async function TemplatesPage() {
                 <h3 className="font-semibold">{template.title}</h3>
                 <p className="text-xs text-slate">{template.is_default ? "Default firm template" : "Custom template"}</p>
               </div>
-              <span className="badge bg-[#ECF2FA] text-ink">Editor coming soon</span>
+              <div className="flex items-center gap-2">
+                {template.template_json?.mode === "precedent_locked" ? (
+                  <span className="badge bg-[#EDF6EE] text-[#2A6B3F]">Precedent (Locked)</span>
+                ) : null}
+                <span className="badge bg-[#ECF2FA] text-ink">Editor coming soon</span>
+              </div>
             </summary>
             <div className="mt-4 space-y-4">
               <div>

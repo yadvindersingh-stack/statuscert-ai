@@ -3,7 +3,6 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceSupabaseClient } from "@/lib/supabase/admin";
 import ReviewActions from "@/components/ReviewActions";
 import ReviewEditor from "@/components/ReviewEditor";
-import { DEFAULT_TEMPLATE } from "@/lib/statuscert/templates";
 import { mapReviewStatus } from "@/lib/statuscert/jobs";
 import { sectionsToReviewText } from "@/lib/statuscert/editor";
 import { getFirmEntitlement } from "@/lib/billing";
@@ -47,13 +46,14 @@ export default async function ReviewDetailPage({ params }: { params: { id: strin
     return <div className="text-sm text-slate">Review not found.</div>;
   }
 
-  const template = review.status_cert_templates?.template_json || DEFAULT_TEMPLATE;
-  const sections = review.review_sections_json || template.sections;
-  const reviewText = review.review_text || sectionsToReviewText(sections);
-  if (!review.review_text && reviewText.trim()) {
+  const sections = (review.review_sections_json || []) as Array<{ content?: string }>;
+  const hasGeneratedSections = sections.some((section) => (section.content || "").trim().length > 0);
+  const seededReviewText = hasGeneratedSections ? sectionsToReviewText(review.review_sections_json || []) : "";
+  const reviewText = review.review_text || seededReviewText;
+  if (!review.review_text && seededReviewText.trim()) {
     await supabase
       .from("status_cert_reviews")
-      .update({ review_text: reviewText, updated_at: new Date().toISOString() })
+      .update({ review_text: seededReviewText, updated_at: new Date().toISOString() })
       .eq("id", review.id)
       .eq("firm_id", firmId);
   }
@@ -97,7 +97,26 @@ export default async function ReviewDetailPage({ params }: { params: { id: strin
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-6">
-          <ReviewEditor reviewId={review.id} initialText={reviewText} />
+          {reviewText.trim() ? (
+            <ReviewEditor reviewId={review.id} initialText={reviewText} />
+          ) : (
+            <div className="card p-6">
+              <h2 className="font-serif text-2xl font-semibold">Review Draft</h2>
+              {activeJob ? (
+                <p className="mt-3 text-sm text-slate">
+                  Your draft is being generated in the background and will appear here when processing completes.
+                </p>
+              ) : docs?.length ? (
+                <p className="mt-3 text-sm text-slate">
+                  Your package is uploaded. Click <span className="font-semibold text-ink">Generate Draft</span> to start drafting.
+                </p>
+              ) : (
+                <p className="mt-3 text-sm text-slate">
+                  Upload your status certificate package, then click <span className="font-semibold text-ink">Generate Draft</span>.
+                </p>
+              )}
+            </div>
+          )}
         </div>
         <div className="space-y-6">
           <div className="card p-5">

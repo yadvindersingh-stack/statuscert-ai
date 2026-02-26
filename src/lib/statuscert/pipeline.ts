@@ -5,7 +5,7 @@ import { generateReview } from './generate';
 import { DEFAULT_TEMPLATE } from './templates';
 import { canGenerateReview, consumeEntitlement } from './entitlements';
 import { buildStatusCertDocxBuffer } from './docx';
-import { ExtractedJson, FlagItem, ReviewSection, TemplateJson } from './types';
+import { CrossCheckItem, ExtractedJson, FlagItem, ReviewSection, TemplateJson } from './types';
 import { reviewTextToSections, sectionsToReviewText } from './editor';
 
 export type JobProgressUpdate = {
@@ -45,14 +45,25 @@ function formatTimestampForTitle(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function cleanTitlePart(value?: string | null) {
+  if (!value) return '';
+  return value
+    .replace(/\s+/g, ' ')
+    .replace(/,\s*during normal business hours.*$/i, '')
+    .replace(/\bprovided a request is in writing.*$/i, '')
+    .trim();
+}
+
 function buildAutoReviewTitle(extracted: ExtractedJson) {
+  const cleanUnit = cleanTitlePart(extracted.unit);
+  const cleanAddress = cleanTitlePart(extracted.property_address);
   const subject =
-    (extracted.unit && extracted.property_address && `${extracted.unit} - ${extracted.property_address}`) ||
-    extracted.property_address ||
-    extracted.unit ||
-    extracted.corporation_name ||
+    (cleanUnit && cleanAddress && `${cleanUnit} - ${cleanAddress}`) ||
+    cleanAddress ||
+    cleanUnit ||
+    cleanTitlePart(extracted.corporation_name) ||
     'Status Certificate';
-  return `${subject} - ${formatTimestampForTitle(new Date())}`;
+  return `${subject.slice(0, 120)} - ${formatTimestampForTitle(new Date())}`;
 }
 
 function slugify(value: string) {
@@ -61,6 +72,191 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80);
+}
+
+function extractFirstMatch(text: string, patterns: RegExp[]) {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const captured = match?.[1] || match?.[0];
+    if (captured && String(captured).trim()) {
+      return String(captured).replace(/\s+/g, ' ').trim();
+    }
+  }
+  return null;
+}
+
+function reconcileExtractedFacts(rawText: string, extracted: ExtractedJson) {
+  const text = rawText || '';
+  const normalized = { ...extracted };
+  const conflicts: Array<{ field: string; ai_value: string | null; source_value: string | null }> = [];
+
+  const sourceCorporation = extractFirstMatch(text, [
+    /Toronto\s+Standard\s+Condominium\s+Corporation\s+No\.?\s*\d+/i,
+    /TSCC\s*\d+/i
+  ]);
+  const sourceAddress = extractFirstMatch(text, [
+    /(\d+\s+ST\.?\s+NICHOLAS\s+ST(?:REET)?(?:,\s*UNIT\s*\d+)?\s*,\s*TORONTO(?:,\s*ONTARIO)?(?:,\s*[A-Z]\d[A-Z]\s*\d[A-Z]\d)?)/i,
+    /(\d+\s+[A-Z0-9.\s]{3,80}\s*,\s*Toronto(?:,\s*Ontario)?(?:,\s*[A-Z]\d[A-Z]\s*\d[A-Z]\d)?)/i
+  ]);
+  const sourceUnit = extractFirstMatch(text, [
+    /(UNIT\s+\d{2,4}\b)/i,
+    /UNIT\s+\d+\s*,?\s*LEVEL\s+\d+/i,
+    /(UNIT\s+\d+)/i
+  ]);
+  const sourceCommonExpenses = extractFirstMatch(text, [
+    /common expenses[^$\n]*\$\s*([0-9,]+(?:\.[0-9]{2})?)/i,
+    /amount of \$\s*([0-9,]+(?:\.[0-9]{2})?)/i
+  ]);
+  const sourceReserveFund = extractFirstMatch(text, [
+    /reserve fund[^$\n]*\$\s*([0-9,]+(?:\.[0-9]{2})?)/i
+  ]);
+
+  const reconcile = (field: keyof ExtractedJson, sourceValue: string | null, formatter?: (value: string) => string) => {
+    if (!sourceValue) return;
+    const finalSource = formatter ? formatter(sourceValue) : sourceValue;
+    const aiValue = normalized[field] ? String(normalized[field]) : null;
+    if (aiValue && aiValue.trim() && aiValue.trim() !== finalSource.trim()) {
+      conflicts.push({ field: String(field), ai_value: aiValue, source_value: finalSource });
+    }
+    (normalized as Record<string, unknown>)[field] = finalSource;
+  };
+
+  reconcile('corporation_name', sourceCorporation);
+  reconcile('property_address', sourceAddress);
+  reconcile('unit', sourceUnit);
+  reconcile('common_expenses', sourceCommonExpenses, (value) => `$${value}`);
+  reconcile('reserve_fund_balance', sourceReserveFund, (value) => `$${value}`);
+
+  return { extracted: normalized, conflicts };
+}
+
+function normalizeComparable(value?: string | null) {
+  if (!value) return '';
+  return value.toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9.$-]/g, '').trim();
+}
+
+function findEvidenceByField(extracted: ExtractedJson, fieldNames: string[]) {
+  const pool = Array.isArray(extracted.evidence) ? extracted.evidence : [];
+  return pool.filter((entry) => fieldNames.includes((entry.field || '').toLowerCase()));
+}
+
+function formatCitation(entry: { page: number; paragraph?: string }) {
+  if (!entry?.page) return '';
+  if (entry.paragraph && String(entry.paragraph).trim()) {
+    return `[p.${entry.page}, para ${String(entry.paragraph).trim()}]`;
+  }
+  return `[p.${entry.page}]`;
+}
+
+function ensureInlineCitation(content: string, extracted: ExtractedJson, evidenceFields: string[]) {
+  if (!content || /\[p\.\d+/i.test(content)) return content;
+  const evidence = findEvidenceByField(extracted, evidenceFields);
+  const citation = evidence.length ? formatCitation(evidence[0]) : '';
+  return citation ? `${content.trim()} ${citation}` : content;
+}
+
+function applyCitationRules(sections: ReviewSection[], extracted: ExtractedJson) {
+  const map: Record<string, string[]> = {
+    summary: ['common_expenses', 'reserve_fund_balance', 'special_assessments', 'legal_proceedings'],
+    insurance: ['insurance_term', 'insurance_required_policies_status', 'insurance_deductibles'],
+    budget_reserve: ['common_expenses', 'reserve_fund_balance', 'reserve_fund_study_date'],
+    leasing: ['restrictions_summary', 'leased_unit_count'],
+    additional: ['restrictions_summary', 'legal_proceedings']
+  };
+
+  return sections.map((section) => {
+    const fields = map[section.key];
+    if (!fields || !section.content) return section;
+    return { ...section, content: ensureInlineCitation(section.content, extracted, fields) };
+  });
+}
+
+function computeApsCrossChecks(extracted: ExtractedJson) {
+  const aps = extracted.aps_extracted;
+  if (!aps?.aps_present) return [] as CrossCheckItem[];
+
+  const checks: Array<{ key: CrossCheckItem['key']; label: string; aps: string | null | undefined; statusCert: string | null | undefined; highRisk?: boolean }> = [
+    { key: 'unit', label: 'Unit', aps: aps.unit, statusCert: extracted.unit, highRisk: true },
+    { key: 'parking', label: 'Parking', aps: aps.parking, statusCert: extracted.parking },
+    { key: 'locker', label: 'Locker', aps: aps.locker, statusCert: extracted.locker },
+    { key: 'bike', label: 'Bike', aps: aps.bike, statusCert: extracted.bike },
+    { key: 'common_expenses', label: 'Common expenses', aps: aps.common_expenses, statusCert: extracted.common_expenses, highRisk: true }
+  ];
+
+  return checks.map((item) => {
+    const apsValue = item.aps ? String(item.aps).trim() : null;
+    const certValue = item.statusCert ? String(item.statusCert).trim() : null;
+    if (!apsValue || !certValue) {
+      return {
+        key: item.key,
+        label: item.label,
+        aps_value: apsValue,
+        status_cert_value: certValue,
+        status: 'NOT_FOUND',
+        note: 'Could not compare because one side is missing.'
+      } as CrossCheckItem;
+    }
+    const same = normalizeComparable(apsValue) === normalizeComparable(certValue);
+    return {
+      key: item.key,
+      label: item.label,
+      aps_value: apsValue,
+      status_cert_value: certValue,
+      status: same ? 'MATCH' : 'MISMATCH',
+      severity: same ? undefined : item.highRisk ? 'HIGH' : 'MED',
+      note: same ? 'APS and status certificate match.' : 'APS and status certificate values differ. Confirm before closing.'
+    } as CrossCheckItem;
+  });
+}
+
+function buildCrossCheckFlags(extracted: ExtractedJson) {
+  const checks = Array.isArray(extracted.cross_checks) ? extracted.cross_checks : [];
+  const apsEvidence = extracted.aps_extracted?.evidence || [];
+  return checks
+    .filter((check) => check.status === 'MISMATCH')
+    .map((check) => ({
+      key: `aps_mismatch_${check.key}`,
+      title: `APS mismatch: ${check.label}`,
+      severity: (check.severity || 'MED') as 'MED' | 'HIGH',
+      evidence: apsEvidence
+        .filter((e) => e.field === check.key)
+        .slice(0, 2)
+        .map((e) => ({ quote: e.quote, page: e.page, paragraph: e.paragraph })),
+      why_it_matters: `${check.label} in APS does not match status certificate value.`,
+      recommended_follow_up: 'Confirm contractual details with client and request clarification from listing side before closing.'
+    })) as FlagItem[];
+}
+
+function buildUnusualClauseFlags(extracted: ExtractedJson) {
+  const clauses = Array.isArray(extracted.unusual_clauses) ? extracted.unusual_clauses : [];
+  return clauses
+    .filter((clause) => clause && clause.trim())
+    .slice(0, 5)
+    .map((clause, index) => ({
+      key: `unusual_clause_${index + 1}`,
+      title: `Unusual clause to review: ${clause}`,
+      severity: 'MED' as const,
+      evidence: [],
+      why_it_matters: 'This item appears non-standard and should be reviewed with the client and supervising lawyer.',
+      recommended_follow_up: 'Confirm implications and closing impact of this clause.'
+    }));
+}
+
+function injectInsuranceComplianceLine(sections: ReviewSection[], extracted: ExtractedJson) {
+  return sections.map((section) => {
+    if (section.key !== 'insurance') return section;
+    const status = extracted.insurance_required_policies_status;
+    const hasSecured = status === 'HAS_REQUIRED_POLICIES' ? 'has' : 'has not';
+    const basisEvidence = findEvidenceByField(extracted, ['insurance_required_policies_status', 'insurance_term']);
+    const citation = basisEvidence.length ? ` ${formatCitation(basisEvidence[0])}` : '';
+    const requiredLine = `According to the Status Certificate, the Corporation ${hasSecured} secured all policies of insurance required under the Condominium Act, 1998.${citation}`;
+    const content = (section.content || '').trim();
+    if (!content) return { ...section, content: requiredLine };
+    if (/secured all policies of insurance required under the condominium act, 1998/i.test(content)) {
+      return section;
+    }
+    return { ...section, content: `${requiredLine}\n\n${content}` };
+  });
 }
 
 async function updateJob(jobId: string, patch: JobProgressUpdate) {
@@ -140,6 +336,8 @@ export async function runGenerateDraftJob(job: any) {
 
   await updateJob(job.id, { stage: 'EXTRACT_LLM', progress: 55 });
   const { extracted, model: extractModel, promptVersion: extractPromptVersion } = await extractStatusCert(mergedText);
+  const reconciled = reconcileExtractedFacts(mergedText, extracted);
+  reconciled.extracted.cross_checks = computeApsCrossChecks(reconciled.extracted);
 
   await admin
     .from('status_cert_reviews')
@@ -154,7 +352,7 @@ export async function runGenerateDraftJob(job: any) {
     .eq('firm_id', firmId);
 
   if (isPlaceholderTitle(review.title)) {
-    const autoTitle = buildAutoReviewTitle(extracted);
+    const autoTitle = buildAutoReviewTitle(reconciled.extracted);
     await admin
       .from('status_cert_reviews')
       .update({ title: autoTitle, updated_at: new Date().toISOString() })
@@ -198,8 +396,9 @@ export async function runGenerateDraftJob(job: any) {
     const { data: defaultTemplate } = await admin
       .from('status_cert_templates')
       .select('template_json')
-      .eq('firm_id', firmId)
-      .eq('is_default', true)
+      .or(`and(firm_id.eq.${firmId},is_default.eq.true),and(firm_id.is.null,is_default.eq.true)`)
+      .order('firm_id', { ascending: false })
+      .limit(1)
       .maybeSingle();
     if (defaultTemplate?.template_json) template = defaultTemplate.template_json;
   }
@@ -207,13 +406,17 @@ export async function runGenerateDraftJob(job: any) {
   const { data: firm } = await admin.from('firms').select('name').eq('id', firmId).single();
 
   const { sections, flags, followUps, model, promptVersion } = await generateReview({
-    extracted,
+    extracted: reconciled.extracted,
     template,
     firmName: firm?.name || 'Firm',
     disclaimers: template.disclaimers || []
   });
 
-  const missingFields = Array.isArray(extracted.missing_fields) ? extracted.missing_fields : [];
+  const missingFields = Array.isArray(reconciled.extracted.missing_fields) ? reconciled.extracted.missing_fields : [];
+  const crossChecks = Array.isArray(reconciled.extracted.cross_checks) ? reconciled.extracted.cross_checks : [];
+  const crossCheckFollowUps = crossChecks
+    .filter((check) => check.status === 'MISMATCH')
+    .map((check) => `APS mismatch detected for ${check.label}. APS: ${check.aps_value || 'Not found'}; Status Certificate: ${check.status_cert_value || 'Not found'}. Resolve before closing.`);
   const missingFieldFollowUps = missingFields.map(
     (fieldKey) => `Missing information: ${fieldKey}. Not found in provided documents. Request additional supporting records.`
   );
@@ -226,12 +429,33 @@ export async function runGenerateDraftJob(job: any) {
     recommended_follow_up: 'Request supporting documents or confirm this point before closing.'
   }));
 
-  const allFollowUps = [...(followUps || []), ...missingFieldFollowUps];
+  const allFollowUps = [...(followUps || []), ...missingFieldFollowUps, ...crossCheckFollowUps];
   const followUpSection: ReviewSection[] = allFollowUps.length
     ? [{ key: 'follow_ups', title: 'Follow-ups / Action Items', instructions: '', style: 'narrative', content: allFollowUps.map((f) => `- ${f}`).join('\n') }]
     : [];
 
-  const finalSections = [...sections, ...followUpSection];
+  const uniqueSectionLines = new Set<string>();
+  const deDuplicatedSections = sections.map((section) => {
+    if (!section.content) return section;
+    const lines = section.content
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => {
+        const key = line.toLowerCase();
+        if (uniqueSectionLines.has(key)) return false;
+        uniqueSectionLines.add(key);
+        return true;
+      });
+    return { ...section, content: lines.join('\n') };
+  });
+
+  let finalSections = injectInsuranceComplianceLine(deDuplicatedSections, reconciled.extracted);
+  finalSections = applyCitationRules(finalSections, reconciled.extracted);
+  finalSections = [...finalSections, ...followUpSection];
+
+  const crossCheckFlags = buildCrossCheckFlags(reconciled.extracted);
+  const unusualClauseFlags = buildUnusualClauseFlags(reconciled.extracted);
   const reviewText = sectionsToReviewText(finalSections);
   const reviewHtml = htmlFromSections(finalSections);
 
@@ -239,7 +463,8 @@ export async function runGenerateDraftJob(job: any) {
     .from('status_cert_reviews')
     .update({
       review_sections_json: finalSections,
-      flags_json: [...(flags || []), ...missingFieldFlags],
+      extracted_json: reconciled.extracted,
+      flags_json: [...(flags || []), ...missingFieldFlags, ...crossCheckFlags, ...unusualClauseFlags],
       review_text: reviewText,
       review_html: reviewHtml,
       status: 'READY',
@@ -267,7 +492,7 @@ export async function runGenerateDraftJob(job: any) {
     review_id: reviewId,
     actor_id: review.created_by,
     event_type: 'REVIEW_GENERATED',
-    payload: { followUps: allFollowUps, missingFields }
+    payload: { followUps: allFollowUps, missingFields, crossChecks, extractionConflicts: reconciled.conflicts }
   });
 
   await updateJob(job.id, { status: 'SUCCEEDED', stage: 'DONE', progress: 100, result: { reviewId } });
@@ -353,6 +578,10 @@ export async function runExportDocxJob(job: any) {
     status: 'SUCCEEDED',
     stage: 'DONE',
     progress: 100,
-    result: { path, downloadUrl: signed?.signedUrl || null }
+    result: {
+      path,
+      downloadUrl: signed?.signedUrl || null,
+      renderer: process.env.STATUSCERT_PRECEDENT_MODE === 'true' ? 'precedent_template' : 'programmatic'
+    }
   });
 }

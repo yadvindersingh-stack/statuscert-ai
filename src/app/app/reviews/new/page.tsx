@@ -9,6 +9,13 @@ async function createReviewAction(formData: FormData) {
   const { firmId, user } = await requireFirmId();
   const supabase = createServerSupabaseClient();
   const title = String(formData.get("title") || "").trim();
+  const { data: preferredTemplate } = await supabase
+    .from("status_cert_templates")
+    .select("id")
+    .or(`and(firm_id.eq.${firmId},is_default.eq.true),and(firm_id.is.null,is_default.eq.true)`)
+    .order("firm_id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   const { data: review, error } = await supabase
     .from("status_cert_reviews")
@@ -16,7 +23,8 @@ async function createReviewAction(formData: FormData) {
       firm_id: firmId,
       created_by: user.id,
       title: title || "Untitled Status Certificate",
-      status: "DRAFT"
+      status: "DRAFT",
+      template_id: preferredTemplate?.id || null
     })
     .select("id")
     .single();
@@ -82,4 +90,3 @@ export default async function NewReviewPage({
     </div>
   );
 }
-
