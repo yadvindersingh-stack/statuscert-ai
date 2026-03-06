@@ -53,15 +53,18 @@ export async function POST(request: Request) {
     payload: templateId ? { templateId } : undefined
   });
 
-  if (executionMode === 'inline' && (created || job.status === 'QUEUED')) {
+  if (executionMode === 'inline') {
     const admin = createServiceSupabaseClient();
     const { data: freshJob } = await admin
       .from('status_cert_jobs')
       .select('*')
       .eq('id', job.id)
       .single();
-    if (freshJob) {
+    if (freshJob && ['QUEUED', 'RUNNING'].includes(String(freshJob.status))) {
       await runGenerateDraftJob(freshJob);
+      return NextResponse.json({ ok: true, status: 'SUCCEEDED', executionMode, completed: true, jobId: freshJob.id });
+    }
+    if (freshJob && String(freshJob.status) === 'SUCCEEDED') {
       return NextResponse.json({ ok: true, status: 'SUCCEEDED', executionMode, completed: true, jobId: freshJob.id });
     }
   }

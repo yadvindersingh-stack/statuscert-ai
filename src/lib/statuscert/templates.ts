@@ -8,12 +8,19 @@ export const DEFAULT_TEMPLATE: TemplateJson = {
     "This review does not replace independent legal analysis or partner review."
   ],
   sections: [
-    { key: "intro", title: "Purpose and Scope", instructions: "Explain purpose, source package scope, and key assumptions. Include inline citations for factual statements.", style: "narrative" },
-    { key: "summary", title: "Key Terms Summary", instructions: "Produce concise terms summary (unit, parking, locker, common expenses, arrears, reserve, legal proceedings) and avoid repeating details covered in budget/insurance sections.", style: "structured" },
-    { key: "insurance", title: "Insurance", instructions: "State whether Corporation has/has not secured all policies required under the Condominium Act, 1998, with citation and key policy term notes.", style: "narrative" },
-    { key: "budget_reserve", title: "Budget and Reserve Fund", instructions: "Discuss common expenses, fee increases, reserve balance/study timing with evidence. Do not conclude reserve fund is healthy unless rationale is explicit.", style: "narrative" },
-    { key: "pets", title: "Pet Rules", instructions: "Note any pet restrictions or approvals required.", style: "narrative" },
-    { key: "leasing", title: "Leasing Rules", instructions: "Summarize leasing restrictions, short-term rental prohibition status, and any notice/approval requirements.", style: "narrative" },
-    { key: "additional", title: "Additional Items to Note", instructions: "Capture sub-metering, unusual clauses, litigation, special assessments, and operational follow-ups.", style: "narrative" }
+    {
+      key: "summary",
+      title: "Summary",
+      instructions:
+        "Provide concise bullet points only. Cover units in paragraph 5, special assessment in paragraph 11, reserve fund balance in paragraph 13, any unusual findings in paragraphs 9/10/12 (only if unusual), legal proceedings from paragraphs 18-22 (always mention yes/no), and unusual findings from supporting documents (only mention document name).",
+      style: "structured"
+    },
+    {
+      key: "follow_ups",
+      title: "Flags / Follow-ups",
+      instructions:
+        "Provide concise bullet list of lawyer follow-ups only. Focus on unusual or risk items. Do not include parking/locker/bike missing details.",
+      style: "structured"
+    }
   ]
 };

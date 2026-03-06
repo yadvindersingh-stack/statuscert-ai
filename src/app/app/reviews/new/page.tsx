@@ -57,10 +57,11 @@ export default async function NewReviewPage({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <p className="section-title">Create review</p>
-        <h1 className="font-serif text-3xl font-semibold">Upload status certificate package</h1>
+        <p className="section-title">Create Review</p>
+        <h1 className="font-serif text-3xl font-semibold">Start a new status certificate review</h1>
+        <p className="mt-2 text-sm text-slate">Set a review name, upload the package, then generate the first draft.</p>
       </div>
 
       {searchParams?.error ? (
@@ -68,21 +69,21 @@ export default async function NewReviewPage({
       ) : null}
 
       {!reviewId ? (
-        <form action={createReviewAction} className="card p-6 space-y-4">
+        <form action={createReviewAction} className="card p-7 space-y-5">
           <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-slate">Review name (optional)</label>
+            <label className="text-xs uppercase tracking-[0.2em] text-slate">Review Name (Optional)</label>
             <input
               name="title"
               type="text"
               placeholder="Example: Unit 302 - St. Nicholas - Purchase"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-2"
+              className="form-input"
             />
-            <p className="mt-2 text-xs text-slate">If blank, we will auto-name after extraction using unit/address and timestamp.</p>
+            <p className="mt-2 text-xs text-slate">If blank, the system auto-names it from unit/address and timestamp.</p>
           </div>
           <FormSubmitButton className="btn btn-primary" idleLabel="Create review" pendingLabel="Creating..." />
         </form>
       ) : (
-        <div className="card p-6 space-y-4">
+        <div className="card p-7 space-y-5">
           <p className="text-sm text-slate">Review: <span className="font-semibold text-ink">{reviewTitle || "Untitled Status Certificate"}</span></p>
           <ReviewUploadForm firmId={firmId} reviewId={reviewId} />
         </div>

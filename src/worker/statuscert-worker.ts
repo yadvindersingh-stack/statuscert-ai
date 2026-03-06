@@ -5,15 +5,43 @@ const POLL_MS = Number(process.env.STATUSCERT_WORKER_POLL_MS || 2000);
 const IDLE_LOG_EVERY = Number(process.env.STATUSCERT_WORKER_IDLE_LOG_EVERY || 30);
 const STALE_RUNNING_MS = Number(process.env.STATUSCERT_WORKER_STALE_RUNNING_MS || 5 * 60 * 1000);
 const WORKER_CONCURRENCY = Math.max(1, Number(process.env.STATUSCERT_WORKER_CONCURRENCY || 2));
+const MALFORMED_JOB_LOG_COOLDOWN_MS = Number(process.env.STATUSCERT_WORKER_MALFORMED_LOG_COOLDOWN_MS || 60000);
 
-async function claimNextJob() {
+type ClaimedJob = {
+  id: string;
+  firm_id: string;
+  review_id: string;
+  job_type: 'GENERATE_DRAFT' | 'EXPORT_DOCX';
+  stage?: string | null;
+  attempt_count: number;
+};
+
+let lastMalformedLogAt = 0;
+
+function coerceClaimedJob(raw: any): ClaimedJob | null {
+  if (!raw || typeof raw !== 'object') return null;
+  if (!raw.id || !raw.job_type || !raw.review_id || !raw.firm_id) return null;
+  if (raw.job_type !== 'GENERATE_DRAFT' && raw.job_type !== 'EXPORT_DOCX') return null;
+  return raw as ClaimedJob;
+}
+
+function maybeLogMalformedClaim(raw: unknown) {
+  const now = Date.now();
+  if (now - lastMalformedLogAt < MALFORMED_JOB_LOG_COOLDOWN_MS) return;
+  lastMalformedLogAt = now;
+  console.warn('[statuscert-worker] ignoring malformed claimed job payload', raw);
+}
+
+async function claimNextJob(): Promise<ClaimedJob | null> {
   const admin = createServiceSupabaseClient();
   const { data, error } = await admin.rpc('claim_next_status_cert_job');
   if (error) {
     throw new Error(error.message);
   }
-  if (Array.isArray(data)) return data[0] || null;
-  return data || null;
+  const first = Array.isArray(data) ? data[0] : data;
+  const claimed = coerceClaimedJob(first);
+  if (!claimed && first) maybeLogMalformedClaim(first);
+  return claimed;
 }
 
 async function markStaleRunningJobs() {
@@ -48,7 +76,7 @@ async function markStaleRunningJobs() {
   console.warn('[statuscert-worker] marked stale RUNNING jobs as FAILED', staleJobs.length);
 }
 
-async function retryOrFail(job: any, message: string) {
+async function retryOrFail(job: ClaimedJob, message: string) {
   const admin = createServiceSupabaseClient();
   const transient = /timeout|network|connection|rate limit|temporarily/i.test(message);
   if (transient && job.attempt_count < 2) {
@@ -95,7 +123,7 @@ async function retryOrFail(job: any, message: string) {
     .eq('firm_id', job.firm_id);
 }
 
-async function processJob(job: any) {
+async function processJob(job: ClaimedJob) {
   console.log('[statuscert-worker] claimed', {
     jobId: job.id,
     reviewId: job.review_id,
@@ -125,7 +153,7 @@ async function main() {
   while (true) {
     try {
       await markStaleRunningJobs();
-      const claimed: any[] = [];
+      const claimed: ClaimedJob[] = [];
       for (let i = 0; i < WORKER_CONCURRENCY; i += 1) {
         const job = await claimNextJob();
         if (!job) break;

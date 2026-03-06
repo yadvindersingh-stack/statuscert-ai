@@ -70,6 +70,8 @@ export type ExtractedJson = {
   reserve_fund_balance_date?: string;
   reserve_fund_study_date?: string;
   reserve_fund_next_due?: string;
+  reserve_fund_annual_contribution?: string;
+  reserve_fund_expenditures?: string;
   legal_proceedings?: string;
   insurance_term?: string;
   insurance_deductibles?: string;
@@ -77,9 +79,25 @@ export type ExtractedJson = {
   insurance_required_policies_basis?: string;
   leased_unit_count?: string;
   restrictions_summary?: string;
+  pet_summary?: string;
+  leasing_summary?: string;
+  permitted_use_summary?: string;
   unusual_clauses?: string[];
   evidence?: { field: string; quote: string; page: number; paragraph?: string }[];
   missing_fields?: string[];
   aps_extracted?: ApsExtracted;
   cross_checks?: CrossCheckItem[];
+};
+
+export type ExportMappingDiagnostics = {
+  requiredFieldsMissing: string[];
+  fallbackFieldsUsed: string[];
+  unresolvedTemplateTokens: string[];
+  bannedResidueHits: string[];
+  anchorsNotFound: string[];
+  requiredFieldsTotal: number;
+  requiredFieldsResolved: number;
+  exportRendererVersion: string;
+  specialAssessmentRawValue: string;
+  specialAssessmentRenderedValue: string;
 };

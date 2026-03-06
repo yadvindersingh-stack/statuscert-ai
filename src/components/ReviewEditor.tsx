@@ -10,12 +10,12 @@ export default function ReviewEditor({
   initialText: string;
 }) {
   const [reviewText, setReviewText] = useState<string>(initialText || "");
-  const [status, setStatus] = useState<string>("Idle");
+  const [status, setStatus] = useState<string>("Ready");
 
   useEffect(() => {
     // Product decision: always replace editor content with latest generated draft.
     setReviewText(initialText || "");
-    setStatus("Draft updated");
+    setStatus("Draft refreshed");
   }, [initialText]);
 
   async function save() {
@@ -26,25 +26,28 @@ export default function ReviewEditor({
       body: JSON.stringify({ reviewId, reviewText })
     });
     const data = await res.json();
-    setStatus(data.ok ? "Saved" : data.error || "Error");
+    setStatus(data.ok ? "Saved" : data.error || "Save failed");
   }
 
   function resetUnsaved() {
     setReviewText(initialText || "");
-    setStatus("Reset");
+    setStatus("Unsaved edits reset");
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="font-serif text-2xl font-semibold">Review Draft</h2>
+        <div>
+          <h2 className="font-serif text-2xl font-semibold">Review Draft</h2>
+          <p className="mt-1 text-sm text-slate">Edit the full draft before export.</p>
+        </div>
         <div className="flex items-center gap-3">
           <button className="btn btn-secondary" onClick={resetUnsaved}>Reset Unsaved</button>
           <button className="btn btn-primary" onClick={save}>Save</button>
         </div>
       </div>
       <textarea
-        className="w-full min-h-[680px] rounded-2xl border border-[#DDD6CA] bg-white p-4 text-sm leading-relaxed"
+        className="w-full min-h-[700px] rounded-2xl border border-[var(--border)] bg-white p-5 text-[15px] leading-8 text-[var(--text)]"
         value={reviewText}
         onChange={(event) => setReviewText(event.target.value)}
       />

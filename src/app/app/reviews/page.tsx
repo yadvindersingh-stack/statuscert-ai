@@ -15,12 +15,22 @@ export default async function ReviewsPage() {
     .eq("firm_id", firmId)
     .order("created_at", { ascending: false });
 
+  const displayTitle = (title: string) =>
+    String(title || "")
+      .replace(/,\s*during normal business hours.*$/i, "")
+      .replace(/\bprovided a request is in writing.*$/i, "")
+      .replace(/\b(unit\s*#?\s*\d+)\s*-\s*(.*\bunit\s*#?\s*\d+\b.*)/i, "$2")
+      .replace(/\bunit\s*#?\s*(\d+)\b/i, "Unit $1")
+      .replace(/\s{2,}/g, " ")
+      .trim() || "Status Certificate";
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8">
+      <div className="flex items-end justify-between">
         <div>
-          <p className="section-title">Status Certificate</p>
+          <p className="section-title">Workspace</p>
           <h1 className="font-serif text-3xl font-semibold">Reviews</h1>
+          <p className="mt-2 text-sm text-slate">Track every status certificate draft from upload through export.</p>
         </div>
         <Link href="/app/reviews/new" className="btn btn-primary">New review</Link>
       </div>
@@ -55,22 +65,34 @@ export default async function ReviewsPage() {
         </div>
       ) : null}
 
-      <div className="card p-6">
-        <div className="grid gap-4">
+      <div className="card overflow-hidden">
+        <div className="border-b border-[var(--border)] bg-[var(--surface-muted)] px-6 py-4">
+          <div className="grid grid-cols-[1.8fr_0.7fr_0.6fr] text-xs uppercase tracking-[0.14em] text-slate">
+            <span>Review</span>
+            <span>Created</span>
+            <span>Status</span>
+          </div>
+        </div>
+        <div className="grid">
           {reviews?.length ? (
             reviews.map((review) => (
-              <Link key={review.id} href={`/app/reviews/${review.id}`} className="rounded-xl border border-[#E6E2D9] p-4 hover:border-ink transition">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold">{review.title}</h3>
-                    <p className="text-xs text-slate">{new Date(review.created_at).toLocaleDateString()}</p>
-                  </div>
-                  <span className="badge bg-[#EEE6D7] text-slate">{mapReviewStatus(review.status)}</span>
+              <Link
+                key={review.id}
+                href={`/app/reviews/${review.id}`}
+                className="grid grid-cols-[1.8fr_0.7fr_0.6fr] items-center gap-4 border-b border-[var(--border)] px-6 py-4 transition hover:bg-[#F8FAFD]"
+              >
+                <div>
+                  <h3 className="font-semibold text-ink">{displayTitle(review.title)}</h3>
+                  <p className="mt-1 text-xs text-slate">Open review</p>
                 </div>
+                <p className="text-sm text-slate">{new Date(review.created_at).toLocaleDateString()}</p>
+                <span className="badge w-fit bg-[#EEF2F8] text-[var(--primary)]">{mapReviewStatus(review.status)}</span>
               </Link>
             ))
           ) : (
-            <p className="text-sm text-slate">No reviews yet. Create your first status certificate review.</p>
+            <div className="px-6 py-12 text-center">
+              <p className="text-sm text-slate">No reviews yet. Create your first status certificate review.</p>
+            </div>
           )}
         </div>
       </div>

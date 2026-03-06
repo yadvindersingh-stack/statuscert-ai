@@ -10,7 +10,10 @@
     "start:worker": "node --env-file-if-exists=.env.local dist/worker/statuscert-worker.js",
     "lint": "next lint",
     "worker": "node --env-file-if-exists=.env.local dist/worker/statuscert-worker.js",
-    "build:worker": "tsc --module commonjs --outDir dist --target ES2020 --moduleResolution node --esModuleInterop true src/worker/statuscert-worker.ts"
+    "build:worker": "tsc --module commonjs --rootDir src --outDir dist --target ES2020 --moduleResolution node --esModuleInterop true src/worker/statuscert-worker.ts",
+    "build:statuscert-lib": "tsc --module commonjs --rootDir src --outDir dist --target ES2020 --moduleResolution node --esModuleInterop true src/lib/statuscert/docx.ts src/lib/statuscert/editor.ts src/lib/statuscert/pipeline.ts src/lib/statuscert/template_token_manifest.ts src/lib/statuscert/types.ts",
+    "test:statuscert": "npm run -s build:worker && npm run -s build:statuscert-lib && node --test tests/statuscert/*.test.mjs",
+    "report:docx-diff": "node scripts/statuscert/docx-diff-report.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.4.0",

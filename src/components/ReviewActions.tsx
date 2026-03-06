@@ -83,7 +83,7 @@ export default function ReviewActions({
   canGenerate?: boolean;
 }) {
   const router = useRouter();
-  const [message, setMessage] = useState<string>("Idle");
+  const [message, setMessage] = useState<string>("Ready");
   const [jobId, setJobId] = useState<string | null>(initialJobId || null);
   const [job, setJob] = useState<JobState | null>(null);
   const [downloadFallbackUrl, setDownloadFallbackUrl] = useState<string | null>(null);
@@ -129,24 +129,33 @@ export default function ReviewActions({
 
   const completeJob = useCallback(
     async (nextJob: JobState) => {
+      const triggerDownload = (url: string, refreshAfter = false) => {
+        setDownloadFallbackUrl(url);
+        const link = document.createElement("a");
+        link.href = url;
+        link.rel = "noopener";
+        link.click();
+        if (refreshAfter) {
+          setTimeout(() => router.refresh(), 400);
+        }
+      };
+
       if (isTerminal(nextJob.status)) {
         const completionKey = `${nextJob.id}:${nextJob.status}`;
         if (completedJobRef.current === completionKey) return;
         completedJobRef.current = completionKey;
       }
       if (nextJob.status === "SUCCEEDED") {
-        setMessage("Done");
+        setMessage("Export ready");
         if (nextJob.result?.downloadUrl) {
-          setDownloadFallbackUrl(nextJob.result.downloadUrl);
-          window.location.href = nextJob.result.downloadUrl;
+          triggerDownload(nextJob.result.downloadUrl, false);
           return;
         }
         if (nextJob.jobType === "EXPORT_DOCX") {
           const res = await fetch(`/api/statuscert/reviews/${reviewId}/export/latest`);
           const data = await res.json();
           if (data.ok && data.downloadUrl) {
-            setDownloadFallbackUrl(data.downloadUrl);
-            window.location.href = data.downloadUrl;
+            triggerDownload(data.downloadUrl, false);
             return;
           }
         }
@@ -154,7 +163,7 @@ export default function ReviewActions({
         return;
       }
       if (nextJob.status === "FAILED") {
-        setMessage(nextJob.errorMessage || "Failed");
+        setMessage(nextJob.errorMessage || "Request failed");
       }
     },
     [reviewId, router]
@@ -183,7 +192,7 @@ export default function ReviewActions({
       if (!data.ok || !data.job) throw new Error("Invalid jobs response");
       await applyJob(data.job as JobState, "poll");
       if (!isTerminal(data.job.status)) {
-        setMessage(data.job.status === "QUEUED" ? "Queued" : "Processing");
+        setMessage(data.job.status === "QUEUED" ? "Queued" : "Generating draft");
       }
       if (transportRef.current === "poll-fallback") {
         const normalDelay = (data.job.elapsedMs || 0) > 60000 ? 5000 : 2000;
@@ -211,18 +220,24 @@ export default function ReviewActions({
     const data = await res.json();
     if (!data.ok) {
       if (data.code === "ENTITLEMENT_REQUIRED") {
-        setEntitlementError("Free trial is complete. Choose a plan or buy a one-file credit to continue.");
-        setMessage("Action required");
+        setEntitlementError("No reviews remaining. Choose a plan or buy a one-file credit to continue.");
+        setMessage("Billing required");
         return null;
       }
-      setMessage(data.error || "Error");
+      setMessage(data.error || "Request failed");
       return null;
     }
     if (data.completed) {
-      setMessage("Done");
+      setMessage(endpoint.includes("/export") ? "Export ready" : "Completed");
       if (data.downloadUrl) {
         setDownloadFallbackUrl(data.downloadUrl);
-        window.location.href = data.downloadUrl;
+        const link = document.createElement("a");
+        link.href = data.downloadUrl;
+        link.rel = "noopener";
+        link.click();
+        if (!endpoint.includes("/export")) {
+          setTimeout(() => router.refresh(), 400);
+        }
       } else {
         router.refresh();
       }
@@ -234,7 +249,7 @@ export default function ReviewActions({
       setMessage("Queued");
       return data.jobId as string;
     }
-    setMessage("Done");
+    setMessage("Completed");
     return null;
   }
 
@@ -327,7 +342,7 @@ export default function ReviewActions({
   }, [job]);
 
   async function retryGenerate() {
-    const id = await run("/api/statuscert/generate-draft", { reviewId }, "Preparing your draft...");
+      const id = await run("/api/statuscert/generate-draft", { reviewId }, "Preparing draft...");
     if (id) setJobId(id);
   }
 
@@ -336,20 +351,20 @@ export default function ReviewActions({
       <button
         className="btn btn-secondary w-full disabled:opacity-60"
         disabled={!canGenerate}
-        onClick={() => run("/api/statuscert/generate-draft", { reviewId }, "Preparing your draft...")}
+        onClick={() => run("/api/statuscert/generate-draft", { reviewId }, "Preparing draft...")}
       >
         Generate Draft
       </button>
       <button
         className="btn btn-secondary w-full disabled:opacity-60"
         disabled={!canGenerate}
-        onClick={() => run("/api/statuscert/export", { reviewId }, "Building DOCX...")}
+        onClick={() => run("/api/statuscert/export", { reviewId }, "Preparing DOCX export...")}
       >
         Export DOCX
       </button>
       {running ? (
         <div className="rounded-xl border border-[#E6E2D9] bg-[#FBF9F5] p-3">
-          <p className="text-xs text-slate">Stage: {stageLabel(job?.stage)}</p>
+          <p className="text-xs text-slate">Current step: {stageLabel(job?.stage)}</p>
           <p className="text-xs text-slate">Progress: {displayProgress}%</p>
           <div className="mt-2 h-2 w-full rounded-full bg-[#E6E2D9]">
             <div className="h-2 rounded-full bg-ink transition-all" style={{ width: `${displayProgress}%` }} />

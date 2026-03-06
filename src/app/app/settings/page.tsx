@@ -13,7 +13,7 @@ export default async function SettingsPage({
   const { data: firm } = await supabase.from("firms").select("name").eq("id", firmId).single();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <p className="section-title">Settings</p>
         <h1 className="font-serif text-3xl font-semibold">Firm profile</h1>
@@ -27,7 +27,7 @@ export default async function SettingsPage({
         <div className="rounded-xl border border-[#E6D1B8] bg-[#FFF8EE] p-4 text-sm text-slate">{searchParams.error}</div>
       ) : null}
 
-      <form action={saveFirmSettingsAction} className="card p-6 space-y-5">
+      <form action={saveFirmSettingsAction} className="card p-7 space-y-5">
         <div>
           <label className="text-xs uppercase tracking-[0.2em] text-slate">Firm name</label>
           <input
@@ -35,15 +35,14 @@ export default async function SettingsPage({
             type="text"
             required
             defaultValue={firm?.name || ""}
-            className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-2"
+            className="form-input"
           />
         </div>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-slate">
-          Signature blocks and default disclaimer settings are next in roadmap.
+          Signature blocks and default disclaimer settings are coming in the next release.
         </div>
         <FormSubmitButton className="btn btn-primary" idleLabel="Save settings" pendingLabel="Saving..." />
       </form>
     </div>
   );
 }
-

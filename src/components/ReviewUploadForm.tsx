@@ -5,12 +5,12 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export default function ReviewUploadForm({ firmId, reviewId }: { firmId: string; reviewId: string }) {
   const [files, setFiles] = useState<File[]>([]);
-  const [status, setStatus] = useState<string>("Idle");
+  const [status, setStatus] = useState<string>("Ready");
   const [uploadedCount, setUploadedCount] = useState<number>(0);
 
   async function handleUpload() {
     if (!files.length) return;
-    setStatus("Uploading...");
+    setStatus("Uploading package...");
     setUploadedCount(0);
     const supabase = createBrowserSupabaseClient();
     const uploaded: { path: string; name: string; size: number }[] = [];
@@ -37,23 +37,27 @@ export default function ReviewUploadForm({ firmId, reviewId }: { firmId: string;
       body: JSON.stringify({ reviewId, documents: uploaded })
     });
 
-    setStatus("Uploaded");
+    setStatus("Upload complete");
     window.location.href = `/app/reviews/${reviewId}`;
   }
 
   return (
     <div className="space-y-4">
-      <input
-        type="file"
-        accept="application/pdf"
-        multiple
-        onChange={(event) => setFiles(Array.from(event.target.files || []))}
-      />
+      <label className="block">
+        <span className="text-xs uppercase tracking-[0.14em] text-slate">PDF Package</span>
+        <input
+          type="file"
+          accept="application/pdf"
+          multiple
+          className="form-input"
+          onChange={(event) => setFiles(Array.from(event.target.files || []))}
+        />
+      </label>
       <button className="btn btn-primary" type="button" onClick={handleUpload}>
         Upload PDF package
       </button>
       {files.length ? <p className="text-xs text-slate">{files.length} file(s) selected</p> : null}
-      {status === "Uploading..." ? (
+      {status === "Uploading package..." ? (
         <div className="space-y-2">
           <p className="text-xs text-slate">Uploaded {uploadedCount} of {files.length}</p>
           <div className="h-2 w-full rounded-full bg-[#E6E2D9]">

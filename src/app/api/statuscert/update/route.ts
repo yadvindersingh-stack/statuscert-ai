@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { requireFirmId } from "@/lib/auth";
 import { DEFAULT_TEMPLATE } from "@/lib/statuscert/templates";
-import { reviewTextToSections } from "@/lib/statuscert/editor";
+import { canonicalizeReviewSections, reviewTextToSections, sectionsToReviewText } from "@/lib/statuscert/editor";
 
 function htmlFromSections(sections: { title: string; content?: string }[]) {
   return sections
@@ -32,10 +32,11 @@ export async function POST(request: Request) {
     if (templateRow?.template_json) template = templateRow.template_json;
   }
 
-  const finalSections = reviewText
+  const parsedSections = reviewText
     ? reviewTextToSections(template.sections, reviewText)
     : sections;
-  const finalText = reviewText || "";
+  const finalSections = canonicalizeReviewSections(parsedSections, reviewText);
+  const finalText = sectionsToReviewText(finalSections);
   const finalHtml = htmlFromSections(finalSections || []);
 
   await supabase

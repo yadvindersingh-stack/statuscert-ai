@@ -24,15 +24,15 @@ export default async function TemplatesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <p className="section-title">Templates</p>
         <h1 className="font-serif text-3xl font-semibold">Firm templates</h1>
-        <p className="mt-2 text-sm text-slate">Control how drafts are structured across your team.</p>
+        <p className="mt-2 text-sm text-slate">Use consistent structure and instructions across all generated drafts.</p>
       </div>
       <div className="card p-6 space-y-3">
         {templates?.map((template) => (
-          <details key={template.id} className="rounded-xl border border-[#E6E2D9] p-4">
+          <details key={template.id} className="rounded-xl border border-[var(--border)] p-4">
             <summary className="flex cursor-pointer items-center justify-between">
               <div>
                 <h3 className="font-semibold">{template.title}</h3>
