@@ -472,6 +472,7 @@ function ensureInlineCitation(content: string, extracted: ExtractedJson, evidenc
   return citation ? `${content.trim()} ${citation}` : content;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function applyCitationRules(sections: ReviewSection[], extracted: ExtractedJson) {
   const map: Record<string, string[]> = {
     summary: ['common_expenses', 'reserve_fund_balance', 'special_assessments', 'legal_proceedings'],
@@ -558,6 +559,7 @@ function buildUnusualClauseFlags(extracted: ExtractedJson) {
     }));
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function injectInsuranceComplianceLine(sections: ReviewSection[], extracted: ExtractedJson) {
   return sections.map((section) => {
     if (section.key !== 'insurance') return section;
@@ -583,6 +585,7 @@ function detectCriticalClauses(rawText: string) {
   return { leasingNotice, shortTermRental, subMetering };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function enforceDeterministicQuality(
   sections: ReviewSection[],
   extracted: ExtractedJson,
@@ -890,13 +893,6 @@ export async function runGenerateDraftJob(job: any) {
   reconciled.extracted.missing_fields = normalizedMissingFields;
   const actionableMissingFields = normalizedMissingFields.filter((fieldKey) => ACTIONABLE_FOLLOW_UP_FIELDS.has(fieldKey));
   const crossChecks = Array.isArray(reconciled.extracted.cross_checks) ? reconciled.extracted.cross_checks : [];
-  const crossCheckFollowUps = crossChecks
-    .filter((check) => check.status === 'MISMATCH')
-    .map((check) => `APS mismatch detected for ${check.label}. APS: ${check.aps_value || 'Not found'}; Status Certificate: ${check.status_cert_value || 'Not found'}. Resolve before closing.`);
-  const missingFieldFollowUps = actionableMissingFields.map((fieldKey) => {
-    const prefix = MUST_HAVE_FIELDS.has(fieldKey) ? 'Required missing information' : 'Missing information';
-    return `${prefix}: ${fieldKey}. Not found in status certificate. Request confirmation before finalizing.`;
-  });
   const missingFieldFlags: FlagItem[] = actionableMissingFields.map((fieldKey) => ({
     key: `missing_${fieldKey}`,
     title: `Missing information: ${fieldKey}`,

@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { job, created } = await enqueueStatusCertJob({
+  const { job } = await enqueueStatusCertJob({
     firmId,
     reviewId,
     jobType: 'GENERATE_DRAFT',

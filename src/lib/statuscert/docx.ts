@@ -2,7 +2,6 @@ import {
   AlignmentType,
   Document,
   HeadingLevel,
-  Packer,
   Paragraph,
   Table,
   TableCell,
@@ -187,6 +186,7 @@ function buildFlagsTable(flags: FlagItem[]) {
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function buildPrecedentDocument(input: BuildDocxInput) {
   const missingFields = Array.isArray(input.extracted?.missing_fields) ? input.extracted?.missing_fields : [];
   const rulesHeading = input.template.sections.some((section) => section.key === "additional")
@@ -348,6 +348,7 @@ function parseInsuranceExpiry(insuranceTerm?: string) {
   return insuranceTerm;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function firstDate(text: string) {
   const match = text.match(/([A-Za-z]+\s+\d{1,2},\s+\d{4})/);
   return match?.[1] || "Not available";
@@ -362,6 +363,7 @@ function sectionText(sections: ReviewSection[], key: string) {
   return (sections.find((s) => s.key === key)?.content || "").trim();
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function replaceNth(source: string, needle: string, replacement: string, occurrence: number) {
   if (!needle) return source;
   let idx = -1;
@@ -396,6 +398,7 @@ function replacePlaceholderAfterAnchor(
   return xml.replace(pattern, `$1${replacement}`);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function collectBracketTokens(xml: string) {
   return Array.from(new Set((xml.match(/\[[^\]]+\]/g) || []).map((token) => token.trim())));
 }
@@ -511,11 +514,7 @@ function extractUnitFromTitle(title: string) {
   return `Unit ${match[1]}`;
 }
 
-function hydrateExtractedForExport(
-  extracted: ExtractedJson,
-  _matterTitle: string,
-  _sections: ReviewSection[]
-): ExtractedJson {
+function hydrateExtractedForExport(extracted: ExtractedJson): ExtractedJson {
   return { ...extracted };
 }
 
@@ -528,7 +527,7 @@ async function buildFromMasterTemplate(input: BuildDocxInput, templatePath: stri
   const fallbackFieldsUsed = new Set<string>();
   const anchorsNotFound = new Set<string>();
 
-  const extracted = hydrateExtractedForExport(input.extracted || {}, input.matterTitle, input.sections);
+  const extracted = hydrateExtractedForExport(input.extracted || {});
   const summaryText = sectionText(input.sections, "summary");
   const followUpText = sectionText(input.sections, "follow_ups");
 
@@ -790,6 +789,7 @@ async function buildFromMasterTemplate(input: BuildDocxInput, templatePath: stri
   return { buffer, diagnostics };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function buildFromDocxTemplate(input: BuildDocxInput, templatePath: string) {
   const source = await readFile(templatePath);
   const zip = await JSZip.loadAsync(source);
@@ -840,6 +840,7 @@ async function buildFromDocxTemplate(input: BuildDocxInput, templatePath: string
   return zip.generateAsync({ type: "nodebuffer" });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function buildStandardDocument(input: BuildDocxInput) {
   const summaryRows = [
     ["Property Unit", toText(input.extracted?.unit)],
