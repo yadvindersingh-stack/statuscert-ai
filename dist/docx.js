@@ -1,0 +1,638 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.buildStatusCertDocxBuffer = buildStatusCertDocxBuffer;
+const docx_1 = require("docx");
+const node_fs_1 = require("node:fs");
+const promises_1 = require("node:fs/promises");
+const node_path_1 = __importDefault(require("node:path"));
+const jszip_1 = __importDefault(require("jszip"));
+const template_token_manifest_1 = require("./template_token_manifest");
+const CONTENT_WIDTH_TWIPS = 9026; // Letter width (11906) - 1" margins on both sides (1440+1440)
+function toText(value, fallback = "Not available") {
+    if (value === null || value === undefined)
+        return fallback;
+    if (Array.isArray(value)) {
+        const flattened = value
+            .map((item) => toText(item, ""))
+            .filter((item) => item && item !== "N/A")
+            .join("; ")
+            .trim();
+        return flattened || fallback;
+    }
+    if (typeof value === "object") {
+        const obj = value;
+        const preferred = ["value", "text", "name", "title", "status", "amount"];
+        for (const key of preferred) {
+            if (obj[key] !== undefined && obj[key] !== null) {
+                const candidate = toText(obj[key], "");
+                if (candidate)
+                    return candidate;
+            }
+        }
+        const compact = Object.entries(obj)
+            .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
+            .map(([k, v]) => `${k}: ${toText(v, "")}`)
+            .join(", ")
+            .trim();
+        return compact || fallback;
+    }
+    const out = String(value).trim();
+    return out.length ? out : fallback;
+}
+function paragraphLines(text) {
+    return text
+        .split("\n")
+        .map((line) => line.trimEnd())
+        .filter((line) => line.length > 0)
+        .map((line) => new docx_1.Paragraph({ text: line }));
+}
+function cellParagraph(text, bold = false) {
+    return new docx_1.Paragraph({
+        spacing: { before: 40, after: 40, line: 276 },
+        children: [new docx_1.TextRun({ text, bold })]
+    });
+}
+function tableCell(text, widthTwips, header = false) {
+    return new docx_1.TableCell({
+        width: { size: widthTwips, type: docx_1.WidthType.DXA },
+        verticalAlign: docx_1.VerticalAlign.CENTER,
+        children: [cellParagraph(text, header)]
+    });
+}
+function apsComparisonRows(extracted) {
+    const e = extracted || {};
+    const aps = e.aps_extracted || {};
+    const checks = (e.cross_checks || []);
+    const lookup = new Map();
+    checks.forEach((check) => lookup.set(check.key, check));
+    const rows = [
+        ["Property Unit", toText(aps.unit, "Not found in APS"), toText(e.unit, "Not found in status certificate"), toText(lookup.get("unit")?.status, "NOT_FOUND")],
+        ["Parking Unit", toText(aps.parking, "Not found in APS"), toText(e.parking, "Not found in status certificate"), toText(lookup.get("parking")?.status, "NOT_FOUND")],
+        ["Locker Unit", toText(aps.locker, "Not found in APS"), toText(e.locker, "Not found in status certificate"), toText(lookup.get("locker")?.status, "NOT_FOUND")],
+        ["Bike Unit", toText(aps.bike, "Not found in APS"), toText(e.bike, "Not found in status certificate"), toText(lookup.get("bike")?.status, "NOT_FOUND")],
+        [
+            "Common Assessment",
+            toText(aps.common_expenses, "Not found in APS"),
+            toText(e.common_expenses, "Not found in status certificate"),
+            toText(lookup.get("common_expenses")?.status, "NOT_FOUND")
+        ],
+        ["Corporation", toText(e.corporation_name, "Not found in provided documents"), toText(e.corporation_name, "Not found in provided documents"), "MATCH"]
+    ];
+    return rows;
+}
+function buildApsVsStatusTable(extracted) {
+    const rows = apsComparisonRows(extracted);
+    return new docx_1.Table({
+        layout: docx_1.TableLayoutType.FIXED,
+        width: { size: CONTENT_WIDTH_TWIPS, type: docx_1.WidthType.DXA },
+        rows: [
+            new docx_1.TableRow({
+                children: [
+                    tableCell("Item", 1625, true),
+                    tableCell("Agreement of Purchase and Sale", 2708, true),
+                    tableCell("Status Certificate", 2708, true),
+                    tableCell("Match", 1985, true)
+                ]
+            }),
+            ...rows.map(([label, apsValue, statusValue, match]) => new docx_1.TableRow({
+                children: [
+                    tableCell(label, 1625),
+                    tableCell(apsValue, 2708),
+                    tableCell(statusValue, 2708),
+                    tableCell(match, 1985)
+                ]
+            }))
+        ]
+    });
+}
+function buildFlagsTable(flags) {
+    if (!flags.length) {
+        return new docx_1.Paragraph({ text: "No flags identified." });
+    }
+    return new docx_1.Table({
+        layout: docx_1.TableLayoutType.FIXED,
+        width: { size: CONTENT_WIDTH_TWIPS, type: docx_1.WidthType.DXA },
+        rows: [
+            new docx_1.TableRow({
+                children: [
+                    tableCell("Flag", 2166, true),
+                    tableCell("Severity", 903, true),
+                    tableCell("Why it matters", 2979, true),
+                    tableCell("Follow-up", 2978, true)
+                ]
+            }),
+            ...flags.map((flag) => new docx_1.TableRow({
+                children: [
+                    tableCell(toText(flag.title), 2166),
+                    tableCell(toText(flag.severity), 903),
+                    tableCell(toText(flag.why_it_matters), 2979),
+                    tableCell(toText(flag.recommended_follow_up), 2978)
+                ]
+            }))
+        ]
+    });
+}
+function buildPrecedentDocument(input) {
+    const missingFields = Array.isArray(input.extracted?.missing_fields) ? input.extracted?.missing_fields : [];
+    const rulesHeading = input.template.sections.some((section) => section.key === "additional")
+        ? "Notes, Rules & Regulations"
+        : "Review Notes";
+    const children = [
+        new docx_1.Paragraph({
+            text: "Status Certificate Review",
+            heading: docx_1.HeadingLevel.TITLE,
+            alignment: docx_1.AlignmentType.CENTER
+        }),
+        new docx_1.Paragraph({ text: input.matterTitle, alignment: docx_1.AlignmentType.CENTER }),
+        new docx_1.Paragraph({ text: input.firmName, alignment: docx_1.AlignmentType.CENTER }),
+        new docx_1.Paragraph({
+            children: [new docx_1.TextRun({ text: `Date: ${input.generatedAt.toLocaleDateString()}` })],
+            alignment: docx_1.AlignmentType.CENTER
+        }),
+        new docx_1.Paragraph({ text: "" }),
+        ...input.template.disclaimers.map((line) => new docx_1.Paragraph({ text: line })),
+        new docx_1.Paragraph({ text: "" }),
+        buildApsVsStatusTable(input.extracted),
+        new docx_1.Paragraph({ text: "" }),
+        new docx_1.Paragraph({ text: rulesHeading, heading: docx_1.HeadingLevel.HEADING_1 }),
+        ...(missingFields.length
+            ? [
+                new docx_1.Paragraph({ text: "Information Gaps", heading: docx_1.HeadingLevel.HEADING_2 }),
+                ...missingFields.map((field) => new docx_1.Paragraph({ text: `${field}: Not found in provided documents`, bullet: { level: 0 } }))
+            ]
+            : []),
+        ...input.sections.flatMap((section) => [
+            new docx_1.Paragraph({ text: section.title || section.key, heading: docx_1.HeadingLevel.HEADING_2 }),
+            ...paragraphLines(toText(section.content, "Not found in provided documents"))
+        ]),
+        new docx_1.Paragraph({ text: "" }),
+        new docx_1.Paragraph({ text: "Flags / Follow-ups", heading: docx_1.HeadingLevel.HEADING_2 }),
+        buildFlagsTable(input.flags)
+    ];
+    return new docx_1.Document({ sections: [{ children }] });
+}
+function xmlEscape(value) {
+    return value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+}
+function paraXml(text) {
+    return `<w:p><w:r><w:t xml:space="preserve">${xmlEscape(text)}</w:t></w:r></w:p>`;
+}
+function tableRowXml(cells) {
+    return `<w:tr>${cells
+        .map((cell) => `<w:tc><w:p><w:r><w:t xml:space="preserve">${xmlEscape(cell)}</w:t></w:r></w:p></w:tc>`)
+        .join("")}</w:tr>`;
+}
+function yesNoFromValue(value) {
+    const text = toText(value, "").toLowerCase();
+    if (!text)
+        return "Not available";
+    if (/\bno\b|\bnone\b|\bnot found\b|\bnot disclosed\b|\bnil\b/.test(text))
+        return "No";
+    return "Yes";
+}
+function parseInsuranceExpiry(insuranceTerm) {
+    if (!insuranceTerm)
+        return "Not available";
+    const range = insuranceTerm.match(/to\s+([A-Za-z]+\s+\d{1,2},\s+\d{4})/i);
+    if (range?.[1])
+        return range[1];
+    return insuranceTerm;
+}
+function firstDate(text) {
+    const match = text.match(/([A-Za-z]+\s+\d{1,2},\s+\d{4})/);
+    return match?.[1] || "Not available";
+}
+function firstAmount(text) {
+    const match = text.match(/\$[0-9,]+(?:\.[0-9]{2})?/);
+    return match?.[0] || "Not available";
+}
+function sectionText(sections, key) {
+    return (sections.find((s) => s.key === key)?.content || "").trim();
+}
+function replaceNth(source, needle, replacement, occurrence) {
+    if (!needle)
+        return source;
+    let idx = -1;
+    let from = 0;
+    for (let i = 0; i < occurrence; i += 1) {
+        idx = source.indexOf(needle, from);
+        if (idx === -1)
+            return source;
+        from = idx + needle.length;
+    }
+    return source.slice(0, idx) + replacement + source.slice(idx + needle.length);
+}
+function removeBracketInstructions(text) {
+    return text.replace(/\[[^\]]+\]/g, "");
+}
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function replacePlaceholderAfterAnchor(xml, anchorText, placeholder, replacement) {
+    const pattern = new RegExp(`(${escapeRegExp(anchorText)}[\\s\\S]{0,2400}?)${escapeRegExp(placeholder)}`, "i");
+    if (!pattern.test(xml))
+        return xml;
+    return xml.replace(pattern, `$1${replacement}`);
+}
+function collectBracketTokens(xml) {
+    return Array.from(new Set((xml.match(/\[[^\]]+\]/g) || []).map((token) => token.trim())));
+}
+function createFlexibleTokenRegex(token) {
+    const chars = Array.from(token).map((char) => escapeRegExp(char));
+    const pattern = chars
+        .map((char, index) => (index === chars.length - 1 ? char : `${char}(?:<[^>]+>)*`))
+        .join("");
+    return new RegExp(pattern, "g");
+}
+function replaceAllFlexibleToken(xml, token, replacement) {
+    return xml.replace(createFlexibleTokenRegex(token), replacement);
+}
+function hasFlexibleToken(xml, token) {
+    return createFlexibleTokenRegex(token).test(xml);
+}
+function hasValue(value) {
+    return String(value ?? "").trim().length > 0;
+}
+function normalizeForMatch(value) {
+    return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+function textFromXml(xml) {
+    return xml
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+function replaceCellText(cellXml, value) {
+    const escaped = xmlEscape(value);
+    const textNodePattern = /<w:t[^>]*>[\s\S]*?<\/w:t>/g;
+    const matches = cellXml.match(textNodePattern);
+    if (!matches || !matches.length) {
+        return cellXml.replace(/(<w:tcPr[\s\S]*?<\/w:tcPr>)/, `$1<w:p><w:r><w:t xml:space="preserve">${escaped}</w:t></w:r></w:p>`);
+    }
+    let replaced = false;
+    return cellXml.replace(textNodePattern, () => {
+        if (replaced)
+            return "<w:t></w:t>";
+        replaced = true;
+        return `<w:t xml:space="preserve">${escaped}</w:t>`;
+    });
+}
+function replaceRowSecondCellByAnchor(xml, anchor, value) {
+    const rowRegex = /<w:tr\b[\s\S]*?<\/w:tr>/g;
+    const anchorNorm = normalizeForMatch(anchor);
+    let found = false;
+    const out = xml.replace(rowRegex, (rowXml) => {
+        if (found)
+            return rowXml;
+        const rowText = normalizeForMatch(textFromXml(rowXml));
+        if (!rowText.includes(anchorNorm))
+            return rowXml;
+        const cellRegex = /<w:tc\b[\s\S]*?<\/w:tc>/g;
+        const cells = [...rowXml.matchAll(cellRegex)];
+        if (cells.length < 2)
+            return rowXml;
+        const target = cells[1];
+        const start = target.index;
+        const end = start + target[0].length;
+        const replacement = replaceCellText(target[0], value);
+        found = true;
+        return rowXml.slice(0, start) + replacement + rowXml.slice(end);
+    });
+    return { xml: out, found };
+}
+function sanitizeInstructionResidue(xml) {
+    const patterns = [
+        /Unit\s*__\s*,\s*Level\s*__/gi,
+        /Yes\s+or\s+No/gi,
+        /\$\s*_{3,}/g,
+        /NOT IN DEFAULT or CURRENT OWNER IN DEFAULT OF \$___/gi,
+        /special assessment\/loan\/increased common expenses or a combination/gi
+    ];
+    let out = xml;
+    for (const pattern of patterns) {
+        out = out.replace(pattern, "");
+    }
+    return out;
+}
+function collectBannedResidueHits(xml) {
+    const checks = [
+        "Unit __, Level __",
+        "Yes or No",
+        "$ ____",
+        "NOT IN DEFAULT or CURRENT OWNER IN DEFAULT OF $___",
+        "special assessment/loan/increased common expenses or a combination"
+    ];
+    const text = textFromXml(xml);
+    return checks.filter((pattern) => text.includes(pattern));
+}
+function normalizeMalformedTemplateTokens(xml) {
+    return xml
+        .replace(/\[ENTER FROM PARAGRAPH 14The annual contribution to be made to the Reserve Fund in the current fiscal year is \$______\. \[ENTER FROM PARAGRAPH 15, AND IF NOT AVAILABLE IN PARAGRAPH 15, ENTER FROM CONTRIBUTION TABLE UNDER RESERVE FUND STUDY\]/g, '[ENTER FROM PARAGRAPH 14]')
+        .replace(/\[ENTER FROM PARAGRAPH 14[^\]]*\]?/g, '[ENTER FROM PARAGRAPH 14]');
+}
+function hydrateExtractedForExport(extracted, _matterTitle, _sections) {
+    return { ...extracted };
+}
+async function buildFromMasterTemplate(input, templatePath) {
+    const source = await (0, promises_1.readFile)(templatePath);
+    const zip = await jszip_1.default.loadAsync(source);
+    const docFile = zip.file("word/document.xml");
+    if (!docFile)
+        throw new Error("Template is missing word/document.xml");
+    let xml = normalizeMalformedTemplateTokens(await docFile.async("string"));
+    const fallbackFieldsUsed = new Set();
+    const anchorsNotFound = new Set();
+    const extracted = hydrateExtractedForExport(input.extracted || {}, input.matterTitle, input.sections);
+    const summaryText = sectionText(input.sections, "summary");
+    const followUpText = sectionText(input.sections, "follow_ups");
+    const para5 = toText(extracted.unit, "Not available");
+    const parking = toText(extracted.parking, "Not found");
+    const locker = toText(extracted.locker, "Not found");
+    const bike = toText(extracted.bike, "Not found");
+    const corporation = toText(extracted.corporation_name, "Not available");
+    const statusCertDate = toText(extracted.reserve_fund_balance_date, "Not available");
+    const defaultFees = /not in default|no arrears/i.test(toText(extracted.arrears, ""))
+        ? "CURRENT OWNER NOT IN DEFAULT"
+        : /arrears|default/i.test(toText(extracted.arrears, ""))
+            ? `CURRENT OWNER IN DEFAULT OF ${toText(extracted.arrears, "Not available")}`
+            : "Not available";
+    const commonAssessment = toText(extracted.common_expenses, "Not available");
+    const commonAssessmentDetail = toText(extracted.common_expenses_due_date, "Not available");
+    const prepaid = toText(extracted.prepaid, "Not available");
+    const feeIncreaseYesNo = yesNoFromValue(extracted.fee_increases);
+    const feeIncreaseDetail = toText(extracted.fee_increases, "Not available");
+    const increaseKnowledgeYesNo = yesNoFromValue(extracted.fee_increases);
+    const specialAssessmentYesNo = yesNoFromValue(extracted.special_assessments);
+    const specialAssessmentDetail = toText(extracted.special_assessments, "Not available");
+    const reserveFund = Object.prototype.hasOwnProperty.call(extracted, "reserve_fund_balance")
+        ? `${toText(extracted.reserve_fund_balance, "Not available")}${toText(extracted.reserve_fund_balance_date, "") ? ` as of ${toText(extracted.reserve_fund_balance_date, "")}` : ""}`
+        : "Not available";
+    const modification = toText((summaryText.match(/modification[^.\n]*/i) || [])[0], "Not available");
+    const substantialChange = toText((summaryText.match(/substantial[^.\n]*common elements[^.\n]*/i) || [])[0], "Not available");
+    const legalProceedingsYesNo = yesNoFromValue(extracted.legal_proceedings);
+    const legalProceedingsDetail = toText(extracted.legal_proceedings, "NONE");
+    const insuranceExpiry = parseInsuranceExpiry(extracted.insurance_term);
+    const reserveStudyDate = toText(extracted.reserve_fund_study_date, "Not available");
+    const reserveStudyNextDue = toText(extracted.reserve_fund_next_due, "Not available");
+    const annualContribution = toText(extracted.reserve_fund_annual_contribution, "Not available");
+    const reserveExpenditures = toText(extracted.reserve_fund_expenditures, "Not available");
+    const reserveAdequacySentence = "";
+    const petSummary = toText(extracted.pet_summary, "Not available");
+    const leasingSummary = toText(extracted.leasing_summary, "Not available");
+    const permittedUse = toText(extracted.permitted_use_summary, "Not available");
+    const additionalItems = toText(followUpText, "NONE");
+    const resolverValues = {
+        property_unit: para5,
+        parking_unit: parking,
+        locker_unit: locker,
+        bike_unit: bike,
+        corporation,
+        default_fees: defaultFees,
+        common_assessment: hasValue(commonAssessmentDetail) && commonAssessmentDetail !== "Not available" ? `${commonAssessment} (${commonAssessmentDetail})` : commonAssessment,
+        prepaid,
+        fee_increase_yes_no: feeIncreaseYesNo,
+        fee_knowledge_yes_no: increaseKnowledgeYesNo,
+        special_assessment_yes_no: specialAssessmentYesNo,
+        reserve_fund: reserveFund,
+        modification,
+        substantial_changes: substantialChange,
+        legal_proceedings: legalProceedingsDetail || "NONE",
+        insurance_expiry: insuranceExpiry,
+        reserve_study_date: reserveStudyDate,
+        reserve_study_next_due: reserveStudyNextDue,
+        pet_summary: petSummary,
+        leasing_summary: leasingSummary,
+        permitted_use: permittedUse,
+        additional_items: additionalItems
+    };
+    for (const rule of template_token_manifest_1.TEMPLATE_FIELD_RULES) {
+        const resolved = String(resolverValues[rule.resolverKey] || "").trim();
+        if (!resolved || resolved === "Not available" || resolved === "Not found" || resolved === "NONE") {
+            fallbackFieldsUsed.add(rule.id);
+        }
+        if (rule.targetType === "cell") {
+            const rowResult = replaceRowSecondCellByAnchor(xml, rule.anchor, resolved || rule.fallback);
+            xml = rowResult.xml;
+            if (!rowResult.found) {
+                anchorsNotFound.add(rule.anchor);
+            }
+        }
+    }
+    xml = replaceAllFlexibleToken(xml, "[ENTER PROPERTY ADDRESS]", xmlEscape(input.matterTitle || "Not available"));
+    xml = replacePlaceholderAfterAnchor(xml, "status certificate dated", "[ENTER DATE FROM STATUS CERTIFICATE]", xmlEscape(statusCertDate));
+    xml = replacePlaceholderAfterAnchor(xml, "Corporation", "[ENTER DATE FROM STATUS CERTIFICATE]", xmlEscape(corporation));
+    xml = replaceAllFlexibleToken(xml, "[MENTION “NOT FOUND” IF NOT UNDER PARAGRAPH 5]", "Not found");
+    xml = xml.replace(/NOT IN DEFAULT or CURRENT OWNER IN DEFAULT OF \$___/g, xmlEscape(defaultFees));
+    xml = replacePlaceholderAfterAnchor(xml, "Common Assessment", "$____", xmlEscape(commonAssessment));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM PARAGRAPH 6]", xmlEscape(commonAssessmentDetail));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM PARAGRAPH 7]", xmlEscape(prepaid));
+    xml = replacePlaceholderAfterAnchor(xml, "Increases of Common Expenses", "Yes or No", xmlEscape(feeIncreaseYesNo));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM PARAGRAPH 10]", xmlEscape(feeIncreaseDetail));
+    xml = replacePlaceholderAfterAnchor(xml, "Corporation’s Knowledge of Increase in Common Expenses", "Yes or No", xmlEscape(increaseKnowledgeYesNo));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM PARAGRAPH 12]", xmlEscape(feeIncreaseDetail));
+    xml = replacePlaceholderAfterAnchor(xml, "Levied Special Assessments", "Yes or No", xmlEscape(specialAssessmentYesNo));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM PARAGRAPH 11]", xmlEscape(specialAssessmentDetail));
+    xml = xml.replace(/\$________ as of \[DATE\]/g, xmlEscape(reserveFund));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM PARAGRAPH 13]", xmlEscape(reserveFund));
+    xml = replacePlaceholderAfterAnchor(xml, "Modification Agreements", "Yes or no", xmlEscape(yesNoFromValue(modification)));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM PARAGRAPH 23]", xmlEscape(modification));
+    xml = replacePlaceholderAfterAnchor(xml, "Substantial Changes to Common Elements", "Yes or no", xmlEscape(yesNoFromValue(substantialChange)));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM PARAGRAPH 25]", xmlEscape(substantialChange));
+    xml = replacePlaceholderAfterAnchor(xml, "Legal Proceedings/Claims involving the Condo Corporation", "Yes or No", xmlEscape(legalProceedingsYesNo));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM PARAGRAPH 18 - 22]", xmlEscape(legalProceedingsDetail));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM CERTIFICATE OF INSURANCE]", `${xmlEscape(insuranceExpiry)}`);
+    xml = replacePlaceholderAfterAnchor(xml, "The most recent Reserve Fund Stud was completed on", "[DATE]", xmlEscape(reserveStudyDate));
+    xml = replacePlaceholderAfterAnchor(xml, "The next Reserve Fund Study is expected to be completed by", "[DATE]", xmlEscape(reserveStudyNextDue));
+    xml = replaceAllFlexibleToken(xml, "[ENTER FROM PARAGRAPH 14]", "Not available");
+    xml = xml.replace(/The annual contribution to be made to the Reserve Fund in the current fiscal year is \$______\.\s*\[ENTER FROM PARAGRAPH 15[^\]]*\]/g, `The annual contribution to be made to the Reserve Fund in the current fiscal year is ${xmlEscape(annualContribution)}.`);
+    xml = xml.replace(/The Condominium Corporation anticipated \$_______ in Reserve Fund expenditures in the current fiscal year\.\s*\[ENTER FROM PARAGRAPH 15[^\]]*\]/g, `The Condominium Corporation anticipated ${xmlEscape(reserveExpenditures)} in Reserve Fund expenditures in the current fiscal year.`);
+    if (reserveAdequacySentence) {
+        xml = xml.replace(/The Board anticipates that the Reserve fund will be adequate in the current fiscal year to cover any expected costs of replacement and\/or repair of the condominium’s assets\. \[ENTER FROM PARAGRAPH 15, AND IF NOT AVAILABLE IN PARAGRAPH 15, THEN DO NOT INCLUDE THIS SECTION 2\.4\]/g, xmlEscape(reserveAdequacySentence));
+    }
+    else {
+        xml = xml.replace(/<w:p[^>]*>[\s\S]*?The Board anticipates that the Reserve fund will be adequate[\s\S]*?SECTION 2\.4[\s\S]*?<\/w:p>/g, "");
+    }
+    xml = replaceAllFlexibleToken(xml, "[SUMMARIZE PET PROVISIONS INCLUDED IN THE DECLARATION, AND RULES AND REGULATIONS]", xmlEscape(petSummary));
+    xml = replaceAllFlexibleToken(xml, "[FOLLOW SAME PARAGRAPH NUMBERING SEQUENCE (3.1, 3.2 AND SO ON)]", "");
+    xml = replaceAllFlexibleToken(xml, "[SUMMARIZE PROVISIONS RELATED TO TENANCY AND LEASING INCLUDED IN THE DECLARATION, AND RULES &amp; REGULATIONS]", xmlEscape(leasingSummary));
+    xml = replaceAllFlexibleToken(xml, "[SUMMARIZE USE SUCH AS SINGLE-FAMILY DWELLING, ETC. AS PER DECLARATION, AND RULES &amp; REGULATIONS]", xmlEscape(permittedUse));
+    xml = replaceAllFlexibleToken(xml, "[MENTION “NONE” IF NO LEGAL PROCEEDINGS FOUND OR SUMMARIZE LEGAL PROCEEDINGS DISCOVERED IN THE STATUS CERTIFICATE AND ACCOMPANYTING DOCUMENTS]", xmlEscape(legalProceedingsDetail || "NONE"));
+    xml = replaceAllFlexibleToken(xml, "[ENTER ANY ADDITIONAL FLAGS OR ITEMS TO NOTE. USE SAME NUMBERING SEQUENCE SUCH AS 7.1, 7.2, ETC. KEEP IT CONCISE.]", xmlEscape(additionalItems));
+    const rawFallbackTokens = [
+        { id: "paragraph_5", placeholder: "[ENTER FROM PARAGRAPH 5]", fallback: "Not available" },
+        { id: "paragraph_6", placeholder: "[ENTER FROM PARAGRAPH 6]", fallback: "Not available" },
+        { id: "paragraph_7", placeholder: "[ENTER FROM PARAGRAPH 7]", fallback: "Not available" },
+        { id: "paragraph_10", placeholder: "[ENTER FROM PARAGRAPH 10]", fallback: "Not available" },
+        { id: "paragraph_11", placeholder: "[ENTER FROM PARAGRAPH 11]", fallback: "Not available" },
+        { id: "paragraph_12", placeholder: "[ENTER FROM PARAGRAPH 12]", fallback: "Not available" },
+        { id: "paragraph_13", placeholder: "[ENTER FROM PARAGRAPH 13]", fallback: "Not available" },
+        { id: "paragraph_18_22", placeholder: "[ENTER FROM PARAGRAPH 18 - 22]", fallback: "NONE" },
+        { id: "insurance", placeholder: "[ENTER FROM CERTIFICATE OF INSURANCE]", fallback: "Not available" },
+        { id: "date", placeholder: "[DATE]", fallback: "Not available" },
+        { id: "pet_summary", placeholder: "[SUMMARIZE PET PROVISIONS INCLUDED IN THE DECLARATION, AND RULES AND REGULATIONS]", fallback: "Not available" },
+        { id: "leasing_summary", placeholder: "[SUMMARIZE PROVISIONS RELATED TO TENANCY AND LEASING INCLUDED IN THE DECLARATION, AND RULES &amp; REGULATIONS]", fallback: "Not available" },
+        { id: "permitted_use", placeholder: "[SUMMARIZE USE SUCH AS SINGLE-FAMILY DWELLING, ETC. AS PER DECLARATION, AND RULES &amp; REGULATIONS]", fallback: "Not available" },
+        { id: "legal_proceedings", placeholder: "[MENTION “NONE” IF NO LEGAL PROCEEDINGS FOUND OR SUMMARIZE LEGAL PROCEEDINGS DISCOVERED IN THE STATUS CERTIFICATE AND ACCOMPANYTING DOCUMENTS]", fallback: "NONE" },
+        { id: "additional", placeholder: "[ENTER ANY ADDITIONAL FLAGS OR ITEMS TO NOTE. USE SAME NUMBERING SEQUENCE SUCH AS 7.1, 7.2, ETC. KEEP IT CONCISE.]", fallback: "NONE" },
+        { id: "not_found", placeholder: "[MENTION “NOT FOUND” IF NOT UNDER PARAGRAPH 5]", fallback: "Not found" },
+        { id: "numbering", placeholder: "[FOLLOW SAME PARAGRAPH NUMBERING SEQUENCE (3.1, 3.2 AND SO ON)]", fallback: "" }
+    ];
+    for (const token of rawFallbackTokens) {
+        if (!hasFlexibleToken(xml, token.placeholder))
+            continue;
+        xml = replaceAllFlexibleToken(xml, token.placeholder, token.fallback);
+        fallbackFieldsUsed.add(token.id);
+    }
+    for (const moneyToken of ["$____", "$_____", "$______", "$_______", "$________"]) {
+        if (hasFlexibleToken(xml, moneyToken)) {
+            xml = replaceAllFlexibleToken(xml, moneyToken, "Not available");
+            fallbackFieldsUsed.add("money_placeholder_cleanup");
+        }
+    }
+    xml = sanitizeInstructionResidue(xml);
+    const unresolvedTemplateTokens = rawFallbackTokens
+        .filter((token) => hasFlexibleToken(xml, token.placeholder))
+        .map((token) => token.placeholder);
+    xml = removeBracketInstructions(xml);
+    const bannedResidueHits = collectBannedResidueHits(xml);
+    const requiredRules = template_token_manifest_1.TEMPLATE_FIELD_RULES.filter((rule) => rule.required);
+    const requiredFieldsMissing = requiredRules
+        .filter((rule) => !hasValue(resolverValues[rule.resolverKey]) || resolverValues[rule.resolverKey] === "Not available")
+        .map((rule) => rule.id);
+    const requiredPlaceholderSet = new Set([
+        "[ENTER FROM PARAGRAPH 5]",
+        "[ENTER FROM PARAGRAPH 13]",
+        "[ENTER FROM PARAGRAPH 18 - 22]"
+    ]);
+    const unresolvedRequired = unresolvedTemplateTokens.filter((token) => requiredPlaceholderSet.has(token));
+    if (unresolvedRequired.length || bannedResidueHits.length) {
+        throw new Error(`Template mapping incomplete. unresolved_required=${unresolvedRequired.length}, residue=${bannedResidueHits.join(", ")}`);
+    }
+    zip.file("word/document.xml", xml);
+    const diagnostics = {
+        requiredFieldsMissing,
+        fallbackFieldsUsed: Array.from(fallbackFieldsUsed),
+        unresolvedTemplateTokens,
+        bannedResidueHits,
+        anchorsNotFound: Array.from(anchorsNotFound),
+        requiredFieldsTotal: requiredRules.length,
+        requiredFieldsResolved: requiredRules.length - requiredFieldsMissing.length
+    };
+    const buffer = await zip.generateAsync({ type: "nodebuffer" });
+    return { buffer, diagnostics };
+}
+async function buildFromDocxTemplate(input, templatePath) {
+    const source = await (0, promises_1.readFile)(templatePath);
+    const zip = await jszip_1.default.loadAsync(source);
+    const docFile = zip.file("word/document.xml");
+    if (!docFile)
+        throw new Error("Template is missing word/document.xml");
+    let xml = await docFile.async("string");
+    const summaryRows = apsComparisonRows(input.extracted).map(([a, b, c]) => tableRowXml([a, b, c]));
+    const flagsRows = input.flags.map((flag) => tableRowXml([
+        toText(flag.title),
+        toText(flag.severity),
+        toText(flag.why_it_matters),
+        toText(flag.recommended_follow_up)
+    ]));
+    const sectionsXml = input.sections
+        .flatMap((section) => [
+        paraXml(section.title || section.key),
+        ...toText(section.content, "Not found in provided documents")
+            .split("\n")
+            .map((line) => paraXml(line))
+    ])
+        .join("");
+    const disclaimersXml = input.template.disclaimers.map((line) => paraXml(line)).join("");
+    const replacements = {
+        "{{MATTER_TITLE}}": xmlEscape(input.matterTitle),
+        "{{FIRM_NAME}}": xmlEscape(input.firmName),
+        "{{GENERATED_DATE}}": xmlEscape(input.generatedAt.toLocaleDateString()),
+        "{{DISCLAIMERS_BLOCK}}": disclaimersXml,
+        "{{APS_ROWS_BLOCK}}": summaryRows.join(""),
+        "{{SECTIONS_BLOCK}}": sectionsXml,
+        "{{FLAGS_ROWS_BLOCK}}": flagsRows.join(""),
+        "<!--DISCLAIMERS_BLOCK-->": disclaimersXml,
+        "<!--APS_ROWS_BLOCK-->": summaryRows.join(""),
+        "<!--SECTIONS_BLOCK-->": sectionsXml,
+        "<!--FLAGS_ROWS_BLOCK-->": flagsRows.join("")
+    };
+    for (const [token, value] of Object.entries(replacements)) {
+        xml = xml.split(token).join(value);
+    }
+    zip.file("word/document.xml", xml);
+    return zip.generateAsync({ type: "nodebuffer" });
+}
+function buildStandardDocument(input) {
+    const summaryRows = [
+        ["Property Unit", toText(input.extracted?.unit)],
+        ["Parking Unit", toText(input.extracted?.parking)],
+        ["Locker Unit", toText(input.extracted?.locker)],
+        ["Bike Unit", toText(input.extracted?.bike)],
+        ["Corporation", toText(input.extracted?.corporation_name || input.template.title || "Condominium Corporation")],
+        ["Common Assessment", toText(input.extracted?.common_expenses)],
+        ["Reserve Fund", toText(input.extracted?.reserve_fund_balance)],
+        ["Legal Proceedings", toText(input.extracted?.legal_proceedings)]
+    ];
+    const summaryTable = new docx_1.Table({
+        layout: docx_1.TableLayoutType.FIXED,
+        width: { size: CONTENT_WIDTH_TWIPS, type: docx_1.WidthType.DXA },
+        rows: [
+            new docx_1.TableRow({
+                children: [
+                    tableCell("Status Certificate", 3159, true),
+                    tableCell("Extracted Summary", 5867, true)
+                ]
+            }),
+            ...summaryRows.map(([label, value]) => new docx_1.TableRow({
+                children: [
+                    tableCell(label, 3159),
+                    tableCell(value, 5867)
+                ]
+            }))
+        ]
+    });
+    return new docx_1.Document({
+        sections: [
+            {
+                children: [
+                    new docx_1.Paragraph({ text: "Status Certificate Review", heading: docx_1.HeadingLevel.TITLE, alignment: docx_1.AlignmentType.CENTER }),
+                    new docx_1.Paragraph({ text: input.matterTitle, alignment: docx_1.AlignmentType.CENTER }),
+                    new docx_1.Paragraph({ text: "" }),
+                    ...input.template.disclaimers.map((line) => new docx_1.Paragraph({ text: line, bullet: { level: 0 } })),
+                    new docx_1.Paragraph({ text: "" }),
+                    summaryTable,
+                    ...input.sections.flatMap((section) => [
+                        new docx_1.Paragraph({ text: section.title || section.key, heading: docx_1.HeadingLevel.HEADING_2 }),
+                        ...paragraphLines(toText(section.content, ""))
+                    ]),
+                    new docx_1.Paragraph({ text: "Flags / Follow-ups", heading: docx_1.HeadingLevel.HEADING_2 }),
+                    buildFlagsTable(input.flags)
+                ]
+            }
+        ]
+    });
+}
+async function buildStatusCertDocxBuffer(input) {
+    const configuredTemplatePath = process.env.STATUSCERT_MASTER_TEMPLATE_PATH;
+    const defaultTemplatePath = node_path_1.default.join(process.cwd(), "templates", "statuscert-master-template.docx");
+    const templatePath = (configuredTemplatePath && (0, node_fs_1.existsSync)(configuredTemplatePath) && configuredTemplatePath) ||
+        ((0, node_fs_1.existsSync)(defaultTemplatePath) ? defaultTemplatePath : null);
+    if (!templatePath) {
+        throw new Error("Master template file not found. Set STATUSCERT_MASTER_TEMPLATE_PATH.");
+    }
+    return buildFromMasterTemplate(input, templatePath);
+}

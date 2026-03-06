@@ -6,15 +6,35 @@ const POLL_MS = Number(process.env.STATUSCERT_WORKER_POLL_MS || 2000);
 const IDLE_LOG_EVERY = Number(process.env.STATUSCERT_WORKER_IDLE_LOG_EVERY || 30);
 const STALE_RUNNING_MS = Number(process.env.STATUSCERT_WORKER_STALE_RUNNING_MS || 5 * 60 * 1000);
 const WORKER_CONCURRENCY = Math.max(1, Number(process.env.STATUSCERT_WORKER_CONCURRENCY || 2));
+const MALFORMED_JOB_LOG_COOLDOWN_MS = Number(process.env.STATUSCERT_WORKER_MALFORMED_LOG_COOLDOWN_MS || 60000);
+let lastMalformedLogAt = 0;
+function coerceClaimedJob(raw) {
+    if (!raw || typeof raw !== 'object')
+        return null;
+    if (!raw.id || !raw.job_type || !raw.review_id || !raw.firm_id)
+        return null;
+    if (raw.job_type !== 'GENERATE_DRAFT' && raw.job_type !== 'EXPORT_DOCX')
+        return null;
+    return raw;
+}
+function maybeLogMalformedClaim(raw) {
+    const now = Date.now();
+    if (now - lastMalformedLogAt < MALFORMED_JOB_LOG_COOLDOWN_MS)
+        return;
+    lastMalformedLogAt = now;
+    console.warn('[statuscert-worker] ignoring malformed claimed job payload', raw);
+}
 async function claimNextJob() {
     const admin = (0, admin_1.createServiceSupabaseClient)();
     const { data, error } = await admin.rpc('claim_next_status_cert_job');
     if (error) {
         throw new Error(error.message);
     }
-    if (Array.isArray(data))
-        return data[0] || null;
-    return data || null;
+    const first = Array.isArray(data) ? data[0] : data;
+    const claimed = coerceClaimedJob(first);
+    if (!claimed && first)
+        maybeLogMalformedClaim(first);
+    return claimed;
 }
 async function markStaleRunningJobs() {
     const admin = (0, admin_1.createServiceSupabaseClient)();
